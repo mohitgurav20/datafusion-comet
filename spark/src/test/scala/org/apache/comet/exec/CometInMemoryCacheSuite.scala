@@ -2452,4 +2452,27 @@ class CometInMemoryCacheSuite extends CometTestBase {
       spark.catalog.clearCache()
     }
   }
+
+  test("CometInMemoryTableScanExec preserves cached plan in innerChildren and SparkPlanInfo") {
+    withSQLConf(CometConf.COMET_IN_MEMORY_CACHE_ENABLED.key -> "true") {
+      val cached = spark.range(100).selectExpr("id % 10 AS k").groupBy("k").count().cache()
+      cached.count()
+      val q = cached.filter("k > 1")
+      val executedPlan = q.queryExecution.executedPlan
+
+      val scan = executedPlan.collectFirst { case s: CometInMemoryTableScanExec => s }
+      assert(scan.isDefined, "expected CometInMemoryTableScanExec in plan")
+      assert(scan.get.innerChildren.nonEmpty, "innerChildren should contain the cached plan")
+
+      val planInfo = org.apache.spark.sql.execution.SparkPlanInfo.fromSparkPlan(executedPlan)
+      def containsPlanNode(info: org.apache.spark.sql.execution.SparkPlanInfo, nodeName: String): Boolean = {
+        info.nodeName.contains(nodeName) || info.children.exists(containsPlanNode(_, nodeName))
+      }
+
+      assert(containsPlanNode(planInfo, scan.get.originalPlan.relation.cachedPlan.nodeName),
+        "SparkPlanInfo should contain the cached plan node from innerChildren")
+
+      spark.catalog.clearCache()
+    }
+  }
 }

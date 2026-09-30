@@ -61,6 +61,10 @@ case class CometInMemoryTableScanExec(
 
   def baseCacheRDD(): RDD[CachedBatch] = cacheBuilder.cachedColumnBuffers
 
+  // Includes the cached plan as an inner child so SparkPlanInfo.fromSparkPlan includes the plan
+  // that built the cached relation (and its metrics) in the Spark SQL UI graph and event logs.
+  override def innerChildren: Seq[SparkPlan] = Seq(originalPlan.relation.cachedPlan)
+
   def runtimeStatistics: Statistics = originalPlan.relation.computeStats()
 
   override lazy val metrics: Map[String, SQLMetric] = Map(
